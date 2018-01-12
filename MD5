@@ -1,7 +1,8 @@
-575a10c6ce762644ba11e16bcd7f6f5d *DESCRIPTION
+a1bef08ce8746de1acd3c12d8bb396fe *DESCRIPTION
 1f16c33e1dbf2180dc39dcc981a94916 *NAMESPACE
+97c1b9e05280ec3f5c9f3fc9f279d737 *NEWS
 a2b43770acb6486d676e01d4f5625d1e *R/onLoad.R
-9fecd230af1bc046c6b2495c1798e976 *R/rMARC.R
+46ee1068bfb48891c52acb803d0162b8 *R/rMARC.R
 a68a1f77be2fd787ddf1e4528ff9e4b9 *inst/java/AC1.jar
 956ec0777b6038825269982afa0bd66d *java/src/eu/kliegr/ac1/AC1.java
 36258328307d12527297ef51b33cec0c *java/src/eu/kliegr/ac1/BaseConfig.java
@@ -87,7 +88,7 @@ f119fe3b95d419c859fe4849b6168b76 *java/src/eu/kliegr/ac1/rule/qualityMeasure/Qua
 99a032216b104d642904f7c8de2341d4 *java/src/eu/kliegr/ac1/rule/qualityMeasure/Support.java
 462ac0603c52e391b0c4b958e82ab0de *java/src/eu/kliegr/ac1/utils/EvaluateCrossvalidation.java
 90e80fd4cdf8fab91ba4b65f9718b497 *java/src/eu/kliegr/ac1/utils/GenerateCSVHeader.java
-54974f771d2bb114eeadd57b10fc56a2 *man/arulesCBAModel2CustomCBAModel.Rd
+2e92025eaf41b5a73049d56879c2084f *man/arulesCBAModel2CustomCBAModel.Rd
 cc15e7725447936a6311736d4b022105 *man/customCBARuleModel-class.Rd
 e31be24e3c59b11b99eb4e83f258d997 *man/debug/humptemp.arules
 28545944d4478c3c55535bd68b922a92 *man/debug/humtemp-conf.xml
@@ -99,4 +100,4 @@ e864e537d2a4ebfc4676114a5fed2a9c *man/qCBARuleModel-class.Rd
 bc593f0e3ab083fc39abbba8fcc1a686 *man/qcbaHumTemp.Rd
 b7dfaadb468fe2c026e28e75e29a0396 *man/qcbaIris.Rd
 a50b28d2777348ca52d1a4a953e40d66 *man/qcbaIris2.Rd
-225624eefdcd579b9c3678d7d12df166 *man/rcbaModel2CustomCBAModel.Rd
+641611cf05594d3d530608a70ae37dab *man/rcbaModel2CustomCBAModel.Rd

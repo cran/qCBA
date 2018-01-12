@@ -22,3 +22,21 @@ Creates instance of \link{customCBARuleModel} class based on model created by th
 Instance of \link{customCBARuleModel} can then be passed to \link[qCBA]{qcba} instead of an instance of \link{CBARuleModel},
 which is created with the arc package.
 }
+\examples{
+\donttest{ # this example takes about 10 seconds
+if (! requireNamespace("rCBA", quietly = TRUE)) {
+ message("Please install rCBA: install.packages('rCBA')")
+} else
+{
+ library(rCBA)
+ message(packageVersion("rCBA"))
+ discrModel <- discrNumeric(iris, "Species")
+ irisDisc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
+ rCBAmodel <- rCBA::build(irisDisc)
+ cCBAmodel <- rcbaModel2CustomCBAModel(rCBAmodel,discrModel$cutp,"Species",iris)
+ qCBAmodel <- qcba(cCBAmodel,iris)
+ print(qCBAmodel@rules)
+  }
+}
+
+}

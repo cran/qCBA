@@ -156,6 +156,24 @@ qcbaIris2 <- function()
 #' @param attTypes vector of attribute types of the original data.  If set to null, you need to pass rawDataset.
 
 
+#' @examples
+#' \donttest{ # this example takes about 10 seconds
+#' if (! requireNamespace("rCBA", quietly = TRUE)) {
+#'  message("Please install rCBA: install.packages('rCBA')")
+#' } else
+#' {
+#'  library(rCBA)
+#'  message(packageVersion("rCBA"))
+#'  discrModel <- discrNumeric(iris, "Species")
+#'  irisDisc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
+#'  rCBAmodel <- rCBA::build(irisDisc)
+#'  cCBAmodel <- rcbaModel2CustomCBAModel(rCBAmodel,discrModel$cutp,"Species",iris)
+#'  qCBAmodel <- qcba(cCBAmodel,iris)
+#'  print(qCBAmodel@rules)
+#'   }
+#' }
+
+#' 
 rcbaModel2CustomCBAModel <- function(rcbaModel, cutPoints, classAtt, rawDataset, attTypes)
 {
   # note that the example for this function generates a notice
@@ -185,7 +203,23 @@ rcbaModel2CustomCBAModel <- function(rcbaModel, cutPoints, classAtt, rawDataset,
 #' @param cutPoints specification of cutpoints applied on the data before they were passed to \code{rCBA::build}
 #' @param rawDataset the raw data (before discretization). This dataset is used to guess attribute types if attTypes is not passed
 #' @param attTypes vector of attribute types of the original data.  If set to null, you need to pass rawDataset.
-
+#' @examples 
+#' 
+#' \donttest{
+#' if (! requireNamespace("arulesCBA", quietly = TRUE)) {
+#'  message("Please install arulesCBA: install.packages('arulesCBA')")
+#' }  else {
+#'  message("The following code might cause the 'pruning exception' rCBA error on some installations")
+#'  discrModel <- discrNumeric(iris, "Species")
+#'  irisDisc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
+#'  arulesCBAModel <- arulesCBA::CBA(Species ~ ., data = irisDisc, supp = 0.05, 
+#'   conf=0.9, lhs.support=TRUE)
+#'  cCBAmodel <- arulesCBAModel2CustomCBAModel(arulesCBAModel, discrModel$cutp, iris)
+#'  qCBAmodel <- qcba(cbaRuleModel=cCBAmodel,datadf=iris)
+#'  print(qCBAmodel@rules)
+#'  }
+#' }
+#' 
 arulesCBAModel2CustomCBAModel <- function(arulesCBAModel, cutPoints, rawDataset, attTypes )
 {
   # note that the example for this function generates a notice
