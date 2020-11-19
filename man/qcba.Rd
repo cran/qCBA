@@ -4,15 +4,27 @@
 \alias{qcba}
 \title{qCBA Quantitative CBA}
 \usage{
-qcba(cbaRuleModel, datadf, extendType = "numericOnly",
+qcba(
+  cbaRuleModel,
+  datadf,
+  extendType = "numericOnly",
   defaultRuleOverlapPruning = "transactionBased",
-  attributePruning = TRUE, trim_literal_boundaries = TRUE,
-  continuousPruning = FALSE, postpruning = "cba",
-  fuzzification = FALSE, annotate = FALSE, ruleOutputPath,
-  minImprovement = 0, minCondImprovement = -1, minConf = 0.5,
+  attributePruning = TRUE,
+  trim_literal_boundaries = TRUE,
+  continuousPruning = FALSE,
+  postpruning = "cba",
+  fuzzification = FALSE,
+  annotate = FALSE,
+  ruleOutputPath,
+  minImprovement = 0,
+  minCondImprovement = -1,
+  minConf = 0.5,
   extensionStrategy = "ConfImprovementAgainstLastConfirmedExtension",
-  loglevel = "WARNING", createHistorySlot = FALSE,
-  timeExecution = FALSE)
+  loglevel = "WARNING",
+  createHistorySlot = FALSE,
+  timeExecution = FALSE,
+  computeOrderedStats = TRUE
+)
 }
 \arguments{
 \item{cbaRuleModel}{a \link{CBARuleModel}}
@@ -37,9 +49,9 @@ qcba(cbaRuleModel, datadf, extendType = "numericOnly",
 
 \item{ruleOutputPath}{path of file to which model will be saved. Must be set if multi rule classification is produced.}
 
-\item{minImprovement}{parameter ofqCBA extend procedure  (used when  \code{extensionStrategy=ConfImprovementAgainstLastConfirmedExtension} or \code{ConfImprovementAgainstSeedRule})}
+\item{minImprovement}{parameter of qCBA extend procedure  (used when  \code{extensionStrategy=ConfImprovementAgainstLastConfirmedExtension} or \code{ConfImprovementAgainstSeedRule})}
 
-\item{minCondImprovement}{parameter ofqCBA extend procedure}
+\item{minCondImprovement}{parameter of qCBA extend procedure}
 
 \item{minConf}{minimum confidence  to accept extension (used when  extensionStrategy=MinConf)}
 
@@ -51,6 +63,8 @@ qcba(cbaRuleModel, datadf, extendType = "numericOnly",
 that were created on input rules during the extension process}
 
 \item{timeExecution}{reports execution time of the extend step}
+
+\item{computeOrderedStats}{appends orderedConf and orderedSupp quality metrics to the resulting dataframe. Setting this parameter to FALSE will reduce the training time.}
 }
 \value{
 Object of class \link{qCBARuleModel}.
@@ -66,7 +80,6 @@ The \link{predict} function automatically determines whether the input model is 
 \examples{
 allData <- datasets::iris[sample(nrow(datasets::iris)),]
 trainFold <- allData[1:100,]
-testFold <- allData[101:nrow(datasets::iris),]
 rmCBA <- cba(trainFold, classAtt="Species")
 rmqCBA <- qcba(cbaRuleModel=rmCBA,datadf=trainFold)
 print(rmqCBA@rules)

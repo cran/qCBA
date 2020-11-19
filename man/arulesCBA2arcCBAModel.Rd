@@ -4,8 +4,13 @@
 \alias{arulesCBA2arcCBAModel}
 \title{arulesCBA2arcCBAModel Converts a model created by \pkg{arulesCBA} so that it can be passed to qCBA}
 \usage{
-arulesCBA2arcCBAModel(arulesCBAModel, cutPoints, rawDataset, classAtt,
-  attTypes)
+arulesCBA2arcCBAModel(
+  arulesCBAModel,
+  cutPoints,
+  rawDataset,
+  classAtt,
+  attTypes
+)
 }
 \arguments{
 \item{arulesCBAModel}{aobject returned  by arulesCBA::CBA()}
@@ -27,16 +32,15 @@ Instance of CBAmodel can then be passed to \link{qcba}
 if (! requireNamespace("arulesCBA", quietly = TRUE)) {
  message("Please install arulesCBA: install.packages('arulesCBA')")
 }  else {
- if (identical(Sys.getenv("NOT_CRAN"), "true")) {
-   classAtt <- "Species"
-   discrModel <- discrNumeric(iris, classAtt)
-   irisDisc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
-   arulesCBAModel <- arulesCBA::CBA(Species ~ ., data = irisDisc, supp = 0.05, 
-    conf=0.9, lhs.support=TRUE)
-   CBAmodel <- arulesCBA2arcCBAModel(arulesCBAModel, discrModel$cutp,  iris, classAtt)
-   qCBAmodel <- qcba(cbaRuleModel=CBAmodel,datadf=iris)
-   print(qCBAmodel@rules)
- }
+ message("The following code might cause the 'pruning exception' rCBA error on some installations")
+ classAtt <- "Species"
+ discrModel <- discrNumeric(iris, classAtt)
+ irisDisc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
+ arulesCBAModel <- arulesCBA::CBA(Species ~ ., data = irisDisc, supp = 0.1, 
+  conf=0.9)
+ CBAmodel <- arulesCBA2arcCBAModel(arulesCBAModel, discrModel$cutp,  iris, classAtt)
+ qCBAmodel <- qcba(cbaRuleModel=CBAmodel,datadf=iris)
+ print(qCBAmodel@rules)
  }
 
 
