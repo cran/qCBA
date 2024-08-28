@@ -32,7 +32,7 @@ Instance of CBAmodel can then be passed to \link{qcba}
 if (! requireNamespace("arulesCBA", quietly = TRUE)) {
  message("Please install arulesCBA: install.packages('arulesCBA')")
 }  else {
- message("The following code might cause the 'pruning exception' rCBA error on some installations")
+\dontrun{
  classAtt <- "Species"
  discrModel <- discrNumeric(iris, classAtt)
  irisDisc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
@@ -42,6 +42,6 @@ if (! requireNamespace("arulesCBA", quietly = TRUE)) {
  qCBAmodel <- qcba(cbaRuleModel=CBAmodel,datadf=iris)
  print(qCBAmodel@rules)
  }
-
+}
 
 }

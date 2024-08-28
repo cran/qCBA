@@ -4,6 +4,9 @@
 #' @importFrom rJava .jcall .jnew .jarray .jevalArray
 #' @importFrom arules apriori inspect
 #' @importFrom stats predict
+#' @importFrom stats as.formula
+#' @importFrom arulesCBA CBA CMAR CPAR PRM FOIL2
+#' @importFrom methods is
 
 library(arules)
 library(rJava)
@@ -34,24 +37,23 @@ qCBARuleModel <- setClass("qCBARuleModel",
 )
 
 
-
-#' rCBARuleModel
+#' customCBARuleModel
 #'
-#' @description  This class represents an CBA rule-based classifier, where rules are represented as string vectors in a data frame
+#' @description  This class represents a rule-based classifier, where rules are represented as string vectors in a data frame
 #' @name customCBARuleModel-class
 #' @rdname customCBARuleModel-class
 #' @exportClass customCBARuleModel
-#' @slot rules dataframe output by \pkg{rCBA}
+#' @slot rules dataframe with rules
 #' @slot cutp list of cutpoints
 #' @slot classAtt name of the target class attribute
 #' @slot attTypes attribute types
 customCBARuleModel <- setClass("customCBARuleModel",
-                          slots = c(
-                            rules = "data.frame",
-                            cutp = "list",
-                            classAtt ="character",
-                            attTypes = "vector"
-                          )
+                               slots = c(
+                                 rules = "data.frame",
+                                 cutp = "list",
+                                 classAtt ="character",
+                                 attTypes = "vector"
+                               )
 )
 
 #' @title  Use the HumTemp dataset to test the one rule classification QCBA workflow.
@@ -74,12 +76,11 @@ qcbaHumTemp <- function()
   data_discr[,3] <- as.factor(data_raw[,3])
 
   txns <- as(data_discr, "transactions")
+  classAtt="Class"
+  appearance <- getAppearance(data_discr, classAtt)
   rules <- apriori(txns, parameter = list(confidence = 0.5, support= 3/nrow(data_discr), minlen=1, maxlen=3), appearance=appearance)
   print("Seed list of rules")
   inspect(rules)
-
-  classAtt="Class"
-  appearance <- getAppearance(data_discr, classAtt)
   rmCBA <- cba_manual(data_raw,  rules, txns, appearance$rhs, classAtt, cutp= list(), pruning_options=NULL)
   print("CBA classifier")
   inspect(rmCBA@rules)
@@ -178,8 +179,8 @@ getConfVectorForROC <- function(confidences, predictedClass, positiveClass)
 #' @export
 #' @param rcbaModel object returned  by rCBA::build
 #' @param cutPoints specification of cutpoints applied on the data before they were passed to  \code{rCBA::build}
-#' @param classAtt the name of the class attribute
 #' @param rawDataset the raw data (before discretization). This dataset is used to guess attribute types if attTypes is not passed
+#' @param classAtt the name of the class attribute
 #' @param attTypes vector of attribute types of the original data.  If set to null, you need to pass rawDataset.
 
 #' @examples
@@ -191,20 +192,23 @@ getConfVectorForROC <- function(confidences, predictedClass, positiveClass)
 #' # This will run only outside a CRAN test, if the environment variable  NOT_CRAN is set to true
 #' # This environment variable is set by devtools
 #' if (identical(Sys.getenv("NOT_CRAN"), "true")) {
+#' \dontrun{
 #'  library(rCBA)
 #'  message(packageVersion("rCBA"))
 #'  discrModel <- discrNumeric(iris, "Species")
 #'  irisDisc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
+#'  
 #'  rCBAmodel <- rCBA::build(irisDisc,parallel=FALSE, sa=list(timeout=0.01))
-#'  CBAmodel <- rcbaModel2CBARuleModel(rCBAmodel,discrModel$cutp,"Species",iris)
+#'  CBAmodel <- rcbaModel2CBARuleModel(rCBAmodel,discrModel$cutp,iris,"Species")
 #'  qCBAmodel <- qcba(CBAmodel,iris)
 #'  print(qCBAmodel@rules)
+#'  }
 #'  }
 #'}
 #' 
 
 #' 
-rcbaModel2CBARuleModel <- function(rcbaModel, cutPoints, classAtt, rawDataset, attTypes)
+rcbaModel2CBARuleModel <- function(rcbaModel, cutPoints, rawDataset, classAtt, attTypes)
 {
   # note that the example for this function generates a notice
   # this should be fine according to https://cran.r-project.org/doc/manuals/r-release/R-exts.html#Suggested-packages
@@ -237,7 +241,7 @@ rcbaModel2CBARuleModel <- function(rcbaModel, cutPoints, classAtt, rawDataset, a
 #' if (! requireNamespace("arulesCBA", quietly = TRUE)) {
 #'  message("Please install arulesCBA: install.packages('arulesCBA')")
 #' }  else {
-#'  message("The following code might cause the 'pruning exception' rCBA error on some installations")
+#' \dontrun{
 #'  classAtt <- "Species"
 #'  discrModel <- discrNumeric(iris, classAtt)
 #'  irisDisc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
@@ -247,7 +251,7 @@ rcbaModel2CBARuleModel <- function(rcbaModel, cutPoints, classAtt, rawDataset, a
 #'  qCBAmodel <- qcba(cbaRuleModel=CBAmodel,datadf=iris)
 #'  print(qCBAmodel@rules)
 #'  }
-#' 
+#' }
 #' 
 arulesCBA2arcCBAModel <- function(arulesCBAModel, cutPoints, rawDataset, classAtt, attTypes )
 {
@@ -255,18 +259,38 @@ arulesCBA2arcCBAModel <- function(arulesCBAModel, cutPoints, rawDataset, classAt
   # this should be fine according to https://cran.r-project.org/doc/manuals/r-release/R-exts.html#Suggested-packages
   
   CBAmodel <- CBARuleModel()
-  #add default rule
+  ruleCount<-length(arulesCBAModel$rules)
+  #check if last rule in the classifier has no conditions (default rule)
+  #if it is not a default rule, try to add one.
+  if (sum(arulesCBAModel$rules@lhs@data[,ruleCount])>0)
+  {
+    #Both LHS and RHS in arules have the same dimension. 
+    #positions 1 to number of distinct items in LHS are used for RHS
+    #remaining positions are used for RHS items
+    if ("default" %in% attributes(arulesCBAModel)$names)
+    {
+      itemCount<-nrow(arulesCBAModel$rules@lhs@data) #total for LHS and RHS items
+      emptyLHS<-rep(FALSE,itemCount)
+      arulesCBAModel$rules@lhs@data <- as(cbind(arulesCBAModel$rules@lhs@data,emptyLHS),"nMatrix")
+      RHSLevels<-nlevels(arulesCBAModel$default)
+      rhs <-emptyLHS
+      positionOfDefaultRuleInRHSLevels<-as.numeric(arulesCBAModel$default)
+      #RHS for default rule has only one bit on which corresponds to the position
+      #of the default rule in the item vector
+      rhs[itemCount - RHSLevels+positionOfDefaultRuleInRHSLevels] <- TRUE
+      arulesCBAModel$rules@rhs@data <- as(cbind(arulesCBAModel$rules@rhs@data,rhs),"nMatrix")
+      #arules data frame does not contain quality metrics for the default rule,
+      # we will add a vector with as many zeros as there are quality metrics (columns)
+      arulesCBAModel$rules@quality <- rbind(arulesCBAModel$rules@quality, rep(0,ncol(arulesCBAModel$rules@quality)) )
+      message("Last rule added based on default specification in the passed model ")
+    }
+    else
+    {
+      warning("Last rule is not a default rule with empty antecedent and could 
+      not be automatically added as 'default' attribute is missing")
+    }
+  }
   CBAmodel@rules <- arulesCBAModel$rules
-  
-  # the following code was necessary for older arulesCBA versions
-  #emptyrhs<-rep(FALSE,NROW(arulesCBAModel$class))
-  #emptylhs<-rep(FALSE,NROW(arulesCBAModel$rules@lhs@data)-NROW(arulesCBAModel$class))
-  #CBAmodel@rules@lhs@data<-as(cbind(arulesCBAModel$rules@lhs@data,c(emptylhs,emptyrhs)),"ngCMatrix")
-  #rhs<-emptyrhs
-  #rhs[which(arulesCBAModel$default  == arulesCBAModel$class ) ]<- TRUE
-  #CBAmodel@rules@rhs@data<-as(cbind(arulesCBAModel$rules@rhs@data,c(emptylhs,rhs)),"ngCMatrix")
-  #arules data frame does not contain quality metrics for the default rule
-  #CBAmodel@rules@quality <- rbind(CBAmodel@rules@quality, c(0,0,0,0) )
   CBAmodel@cutp <- cutPoints
   CBAmodel@classAtt <- classAtt
   if (missing(attTypes))
@@ -280,8 +304,7 @@ arulesCBA2arcCBAModel <- function(arulesCBAModel, cutPoints, rawDataset, classAt
   return (CBAmodel)
 }
 #' @title sbrlModel2arcCBARuleModel Converts a model created by \pkg{sbrl} so that it can be passed to qCBA
-#' @description Creates instance of  CBAmodel class from the \pkg{arc} package. SBRL package is no longer in CRAN,
-#' but can be obtained from https://github.com/cran/sbrl
+#' @description Creates instance of  CBAmodel class from the \pkg{arc} package. 
 #' Instance of  CBAmodel can then be passed to \link{qcba}
 #' @export
 #' @param sbrl_model object returned  by arulesCBA::CBA()
@@ -290,83 +313,82 @@ arulesCBA2arcCBAModel <- function(arulesCBAModel, cutPoints, rawDataset, classAt
 #' @param classAtt the name of the class attribute
 #' @param attTypes vector of attribute types of the original data.  If set to null, you need to pass rawDataset.
 #' @examples 
-#' # if (! requireNamespace("rCBA", quietly = TRUE)) {
-#' #  message("Please install rCBA to allow for sbrl model conversion")
-#' #   return()
-#' # } else if (! requireNamespace("sbrl", quietly = TRUE)) {
-#' #  message("Please install sbrl to allow for postprocessing of sbrl models")
-#' #} else
-#' #{
-#' #  library(sbrl)
-#' #  library(rCBA)
-#' #  #sbrl handles only binary problems, iris has 3 target classes - remove one class
-#' #  set.seed(111)
-#' #  allData <- datasets::iris[sample(nrow(datasets::iris)),]
-#' #  classToExclude<-"versicolor"
-#' #  allData <- allData[allData$Species!=classToExclude, ]
-#' #  # drop virginica level
-#' #  allData$Species <-allData$Species [, drop=TRUE]
-#' #  trainFold <- allData[1:50,]
-#' #  testFold <- allData[51:nrow(allData),]
-#' #  sbrlFixedLabel<-"label"
-#' #  origLabel<-"Species"
+#' if (! requireNamespace("rCBA", quietly = TRUE)) {
+#'   message("Please install rCBA to allow for sbrl model conversion")
+#'   return()
+#' } else if (! requireNamespace("sbrl", quietly = TRUE)) {
+#'   message("Please install sbrl to allow for postprocessing of sbrl models")
+#' } else
+#' {
+#' #' # This will run only outside a CRAN test, if the environment variable  NOT_CRAN is set to true
+#' # This environment variable is set by devtools
+#' if (identical(Sys.getenv("NOT_CRAN"), "true")) {
+#'   library(sbrl)
+#'   library(rCBA)
+#'   # sbrl handles only binary problems, iris has 3 target classes - remove one class
+#'   set.seed(111)
+#'   allData <- datasets::iris[sample(nrow(datasets::iris)),]
+#'   classToExclude<-"versicolor"
+#'   allData <- allData[allData$Species!=classToExclude, ]
+#'   # drop the removed level
+#'   allData$Species <-allData$Species [, drop=TRUE]
+#'   trainFold <- allData[1:50,]
+#'   testFold <- allData[51:nrow(allData),]
+#'   sbrlFixedLabel<-"label"
+#'   origLabel<-"Species"
 #' 
-#' #  orignames<-colnames(trainFold)
-#' #  orignames[which(orignames == origLabel)]<-sbrlFixedLabel
-#' #  colnames(trainFold)<-orignames
-#' #   colnames(testFold)<-orignames
+#'   orignames<-colnames(trainFold)
+#'   orignames[which(orignames == origLabel)]<-sbrlFixedLabel
+#'   colnames(trainFold)<-orignames
+#'   colnames(testFold)<-orignames
 #' 
-#' #  # to recode label to binary values:
-#' #  # first create dict mapping from original distinct class values to 0,1 
-#' #  origval<-levels(as.factor(trainFold$label))
-#' #  newval<-range(0,1)
-#' #  dict<-data.frame(origval,newval)
-#' #  # then apply dict to train and test fold
-#' #  trainFold$label<-dict[match(trainFold$label, dict$origval), 2]
-#' #  testFold$label<-dict[match(testFold$label, dict$origval), 2]
+#'   # to recode label to binary values:
+#'   # first create dict mapping from original distinct class values to 0,1 
+#'   origval<-levels(as.factor(trainFold$label))
+#'   newval<-range(0,1)
+#'   dict<-data.frame(origval,newval)
+#'   # then apply dict to train and test fold
+#'   trainFold$label<-dict[match(trainFold$label, dict$origval), 2]
+#'   testFold$label<-dict[match(testFold$label, dict$origval), 2]
 #' 
-#' #  # discretize training data
-#' #  trainFoldDiscTemp <- discrNumeric(trainFold, sbrlFixedLabel)
-#' #  trainFoldDiscCutpoints <- trainFoldDiscTemp$cutp
-#' #  trainFoldDisc <- as.data.frame(lapply(trainFoldDiscTemp$Disc.data, as.factor))
+#'   # discretize training data
+#'   trainFoldDiscTemp <- discrNumeric(trainFold, sbrlFixedLabel)
+#'   trainFoldDiscCutpoints <- trainFoldDiscTemp$cutp
+#'   trainFoldDisc <- as.data.frame(lapply(trainFoldDiscTemp$Disc.data, as.factor))
 #' 
-#' #  # discretize test data
-#' #  testFoldDisc <- applyCuts(testFold, trainFoldDiscCutpoints, infinite_bounds=TRUE, labels=TRUE)
-#' 
-#' #  # learn sbrl model
-#' #  sbrl_model <- sbrl(trainFoldDisc, iters=30000, pos_sign="0", 
-#' #                   neg_sign="1", rule_minlen=1, rule_maxlen=10, 
-#' #                    minsupport_pos=0.10, minsupport_neg=0.10, 
-#' #                   lambda=10.0, eta=1.0, alpha=c(1,1), nchain=10)
-#' #  # apply sbrl model on a test fold
-#' #  yhat <- predict(sbrl_model, testFoldDisc)
-#' #  yvals<- as.integer(yhat$V1>0.5)
-#' #  sbrl_acc<-mean(as.integer(yvals == testFoldDisc$label))
-#' #  message("SBRL RESULT")
-#' #  sbrl_model
-#' #  rm_sbrl<-sbrlModel2arcCBARuleModel(sbrl_model,trainFoldDiscCutpoints,trainFold,sbrlFixedLabel) 
-#' #  message(paste("sbrl acc=",sbrl_acc,"sbrl rule count=",nrow(sbrl_model$rs), "avg rule length", 
-#' #  sum(rm_sbrl@rules@lhs@data)/length(rm_sbrl@rules)))
-#' #  rmQCBA_sbrl <- qcba(cbaRuleModel=rm_sbrl,datadf=trainFold)
-#' #  prediction <- predict(rmQCBA_sbrl,testFold)
-#' #  acc_qcba_sbrl <- CBARuleModelAccuracy(prediction, testFold[[rmQCBA_sbrl@classAtt]])
-#' #  if (! requireNamespace("stringr", quietly = TRUE)) {
-#' #    message("Please install stringr to compute average rule length for QCBA")
-#' #    avg_rule_length <- NA
-#' #  } else
-#' #  {
-#' #    library(stringr)
-#' #    avg_rule_length <- (sum(unlist(lapply(rmQCBA_sbrl@rules[1],str_count,pattern=",")))+
-#' #                          # assuming the last rule has antecedent length zero 
-#' #                          nrow(rmQCBA_sbrl@rules)-1)/nrow(rmQCBA_sbrl@rules)
-#' #  }
-#' #  message("QCBA RESULT")
-#' #  rmQCBA_sbrl@rules
-#' #  message(paste("QCBA after SBRL acc=",acc_qcba_sbrl,"rule count=",
-#' #   rmQCBA_sbrl@ruleCount, "avg rule length",  avg_rule_length))
-#' #   unlink("tdata_R.label") # delete temp files created by SBRL
-#' #   unlink("tdata_R.out")
-#' # }
+#'   # discretize test data
+#'   testFoldDisc <- applyCuts(testFold, trainFoldDiscCutpoints, infinite_bounds=TRUE, labels=TRUE)
+#'   # SBRL 1.4 crashes if features contain a space
+#'   # even if these features are converted to factors,
+#'   # to circumvent this, it is necessary to replace spaces
+#'   trainFoldDisc <- as.data.frame(lapply(trainFoldDisc, function(x) gsub(" ", "", as.character(x))))
+#'   for (name in names(trainFoldDisc)) {trainFoldDisc[name] <- as.factor(trainFoldDisc[,name])}
+#'   # learn sbrl model, rule_minlen is increased to demonstrate the effect of postprocessing 
+#'   sbrl_model <- sbrl(trainFoldDisc, iters=20000, pos_sign="0", 
+#'    neg_sign="1", rule_minlen=3, rule_maxlen=5, minsupport_pos=0.05, minsupport_neg=0.05, 
+#'    lambda=20.0, eta=5.0, nchain=25)
+#'   # apply sbrl model on a test fold
+#'   yhat <- predict(sbrl_model, testFoldDisc)
+#'   yvals<- as.integer(yhat$V1>0.5)
+#'   sbrl_acc<-mean(as.integer(yvals == testFoldDisc$label))
+#'   message("SBRL RESULT")
+#'   message(sbrl_model)
+#'   rm_sbrl<-sbrlModel2arcCBARuleModel(sbrl_model,trainFoldDiscCutpoints,trainFold,sbrlFixedLabel) 
+#'   message(paste("sbrl acc=",sbrl_acc,", sbrl rule count=",nrow(sbrl_model$rs), ",
+#'   avg condition count (incl. default rule)", 
+#'   sum(rm_sbrl@rules@lhs@data)/length(rm_sbrl@rules)))
+#'   rmQCBA_sbrl <- qcba(cbaRuleModel=rm_sbrl,datadf=trainFold)
+#'   prediction <- predict(rmQCBA_sbrl,testFold)
+#'   acc_qcba_sbrl <- CBARuleModelAccuracy(prediction, testFold[[rmQCBA_sbrl@classAtt]])
+#'   avg_rule_length <- rmQCBA_sbrl@rules$condition_count/nrow(rmQCBA_sbrl@rules)
+#'   message("RESULT of QCBA postprocessing of SBRL")
+#'   message(rmQCBA_sbrl@rules)
+#'   message(paste("QCBA after SBRL acc=",acc_qcba_sbrl,", rule count=",
+#'   rmQCBA_sbrl@ruleCount, ", avg condition count (incl. default rule)",  avg_rule_length))
+#'   unlink("tdata_R.label") # delete temp files created by SBRL
+#'   unlink("tdata_R.out")
+#'  }
+#' }
 
 sbrlModel2arcCBARuleModel <- function(sbrl_model, cutPoints, rawDataset, classAtt, attTypes)
 {
@@ -411,7 +433,7 @@ sbrlModel2arcCBARuleModel <- function(sbrl_model, cutPoints, rawDataset, classAt
 #' rules will be annotated with probability distributions and optionally fuzzy borders. The intended use of such models is multi-rule classification.
 #' The \link{predict} function automatically determines whether the input model is a CBA model or an annotated model.
 #' @export
-#' @param cbaRuleModel a \link{CBARuleModel}
+#' @param cbaRuleModel a \link[arc]{CBARuleModel}
 #' @param datadf data frame with training data
 #' @param extendType  possible extend types - numericOnly or noExtend
 #' @param defaultRuleOverlapPruning pruning removing rules made redundant by the default rule; possible values: \code{noPruning}, \code{transactionBased}, \code{rangeBased}, \code{transactionBasedAsFirstStep}
@@ -435,13 +457,13 @@ sbrlModel2arcCBARuleModel <- function(sbrl_model, cutPoints, rawDataset, classAt
 #' @return Object of class \link{qCBARuleModel}.
 #'
 #' @examples
+#' \dontrun{
 #' allData <- datasets::iris[sample(nrow(datasets::iris)),]
 #' trainFold <- allData[1:100,]
 #' rmCBA <- cba(trainFold, classAtt="Species")
 #' rmqCBA <- qcba(cbaRuleModel=rmCBA,datadf=trainFold)
 #' print(rmqCBA@rules)
-
-
+#' }
 
 qcba <- function(cbaRuleModel,  datadf, extendType="numericOnly", defaultRuleOverlapPruning="transactionBased",attributePruning  = TRUE, trim_literal_boundaries=TRUE, continuousPruning=FALSE, postpruning="cba",fuzzification=FALSE, annotate=FALSE, ruleOutputPath, minImprovement=0,minCondImprovement=-1,minConf = 0.5,  extensionStrategy="ConfImprovementAgainstLastConfirmedExtension", loglevel = "WARNING", createHistorySlot=FALSE, timeExecution=FALSE, computeOrderedStats = TRUE)
 {
@@ -463,14 +485,14 @@ qcba <- function(cbaRuleModel,  datadf, extendType="numericOnly", defaultRuleOve
   classAtt=cbaRuleModel@classAtt
 
   #reshape R data for Java call IF necessary
-  if (class(cbaRuleModel)=="CBARuleModel")
+  if (is(cbaRuleModel,"CBARuleModel"))
   {
     #  the passed object in rmCBA@rules was created by arules package, reshape necessary
     rules=cbaRuleModel@rules
     rulesFrame <- as(rules,"data.frame")
     rulesFrame$rules <- as.character(rulesFrame$rules)
   }
-  else if (class(cbaRuleModel)=="customCBARuleModel")
+  else if (is(cbaRuleModel,"customCBARuleModel"))
   {
     rulesFrame=cbaRuleModel@rules
     message("Using customCBARuleModel")
@@ -519,12 +541,13 @@ qcba <- function(cbaRuleModel,  datadf, extendType="numericOnly", defaultRuleOve
   else
   {
     #parse results into R structures
-    extRulesArray <- .jcall(hjw, "[[Ljava/lang/String;", "getRules", evalArray=FALSE)
+    extRulesArray <- .jcall(hjw, "[[Ljava/lang/String;", "getRulesBasicStatsLength", evalArray=FALSE)
     extRules <- .jevalArray(extRulesArray,simplify=TRUE)
-    colnames(extRules) <- c("rules","support","confidence")
+    colnames(extRules) <- c("rules","support","confidence","condition_count")
     extRulesFrame<-as.data.frame(extRules,stringsAsFactors=FALSE)
     extRulesFrame$support<-as.numeric(extRulesFrame$support)
     extRulesFrame$confidence<-as.numeric(extRulesFrame$confidence)
+    extRulesFrame$condition_count<-as.numeric(extRulesFrame$condition_count)
     if (createHistorySlot)
     {
       extRulesHistoryArray <- .jcall(hjw, "[[Ljava/lang/String;", "getRuleHistory", evalArray=FALSE)
@@ -539,7 +562,7 @@ qcba <- function(cbaRuleModel,  datadf, extendType="numericOnly", defaultRuleOve
     rm@rules <- extRulesFrame
     if (computeOrderedStats)
     {
-      message("computing orderedConf and orderedSupp")
+      #message("computing orderedConf and orderedSupp")
       firingIDs_train <- predict(rm,datadf,outputFiringRuleIDs=TRUE)
       prediction_train <- predict(rm,datadf)
       ordered_conf <- c()
@@ -587,6 +610,7 @@ qcba <- function(cbaRuleModel,  datadf, extendType="numericOnly", defaultRuleOve
 #' @export
 #' @method predict qCBARuleModel
 #' @examples
+#' \dontrun{
 #' allData <- datasets::iris[sample(nrow(datasets::iris)),]
 #' trainFold <- allData[1:100,]
 #' testFold <- allData[101:nrow(datasets::iris),]
@@ -601,7 +625,7 @@ qcba <- function(cbaRuleModel,  datadf, extendType="numericOnly", defaultRuleOve
 #' message(rmqCBA@rules[firingRuleIDs[2],1])
 #' message("The second instance is")
 #' message(testFold[2,])
-#' 
+#' }
 #' @seealso \link{qcba}
 #'
 #'
@@ -660,19 +684,19 @@ predict.qCBARuleModel <- function(object, newdata, testingType,loglevel = "WARNI
     if (confScoreType =="ordered" & !("orderedConf" %in% colnames(ruleModel@rules)))
     {
       message("orderedConf has not been precomputed, have you trained qcba with 
-              computeOrderedStats=TRUE ?")
-      confPositionInVector<-3
+              computeOrderedStats=TRUE? Falling back to standard global confidence")
+      confPositionInVector<-which(colnames(ruleModel@rules)=="confidence")
     }
     else if (confScoreType =="ordered")
     {
-      confPositionInVector<-4
+      confPositionInVector<-which(colnames(ruleModel@rules)=="orderedConf")
     }
     else
     {
-      confPositionInVector<-3
+      confPositionInVector<-which(colnames(ruleModel@rules)=="confidence")
       if (confScoreType !="global")
       {
-        message("Unrecognized confScoreType, using value global")
+        message("Unrecognized confScoreType, falling back to standard global confidence")
       }
     }
     # The method uses confidence of the firing rule (as was computed on the entire training data)
@@ -698,6 +722,190 @@ predict.qCBARuleModel <- function(object, newdata, testingType,loglevel = "WARNI
 }
 
 
+#' @title Learn and evaluate QCBA postprocessing on multiple rule learners. 
+#' This can be, for example, used to automatically select the best model for a given
+#' use case based on a combined preference for accuracy and model size.
+#' 
+#' @description Learn multiple rule models using base rule induction algorithms
+#' from \pkg{arulesCBA} and apply QCBA to postprocess them. 
+#' @export
+#' @param train data frame with training data
+#' @param test data frame with testing data before postprocessing
+#' @param classAtt the name of the class attribute
+#' @param train_disc prediscretized training data
+#' @param test_disc prediscretized tet data
+#' @param cutPoints specification of cutpoints applied on the data
+#'  (ignored if train_disc is null)
+#' @param algs vector with names of baseline rule learning algorithms. 
+#' Names must correspond to function names from the \pkg{arulesCBA} library 
+#' @param iterations number of executions over base learner, which is used for
+#' obtaining a more precise estimate of build time
+#' @param rounding_places statistics in the resulting dataframe will be rounded to
+#' specified number of decimal places 
+#' @param return_models boolean indicating if also learnt rule lists
+#' (baseline and postprocessed) should be  included in model output 
+#' @param debug_prints print debug information such as rule lists 
+#' @param ... Parameters for base learners, the name of the argument is the base
+#' learner (one of `algs` values) and value is a list of parameters to pass. 
+#' To specify parameters for QCBA pass "QCBA". See also Example 3.
+#' @return Outputs a dataframe with evaluation metrics and if `return_models==TRUE`
+#' also the induced baseline and QCBA models (see also Example 3).  
+#' Included metrics in the dataframe with statistics:
+#' **accuracy**: percentage of correct predictions in the test set
+#' **rulecount**: number of rules in the rule list. Note that for QCBA the 
+#' count includes the default rule (rule with empty antecedent), while for 
+#' base learners this rule may not be included (depending on the base learner) 
+#' **modelsize**: total number of conditions in the antecedents of all rules in
+#'  the model
+#' **buildtime**: learning time for inference of the model. In case of QCBA, this 
+#' excludes time for the induction of the base learner
+#' 
+#' @seealso [qcba()] which this function wraps.
+#' @examples
+#' # EXAMPLE 1: pass train and test folds, induce multiple base rule learners,
+#' # postprocess each with QCBA and return benchmarking results.
+#' \dontrun{
+#' if (identical(Sys.getenv("NOT_CRAN"), "true")) {
+#' # Define input dataset and target variable 
+#' df_all <-datasets::iris
+#' classAtt <- "Species"
+#'
+#' # Create train/test partition using built-in R functions
+#' tot_rows<-nrow(df_all)  
+#' train_proportion<-2/3
+#' df_all <- df_all[sample(tot_rows),]
+#' trainFold <- df_all[1:(train_proportion*tot_rows),]
+#' testFold <- df_all[(1+train_proportion*tot_rows):tot_rows,]
+#' # learn with default metaparameter values
+#' stats<-benchmarkQCBA(trainFold,testFold,classAtt)
+#' print(stats)
+#' # print relative change of QCBA results over baseline algorithms 
+#' print(stats[,6:10]/stats[,0:5]-1)
+#' }}
+#' # EXAMPLE 2: As Example 1 but data are discretizated externally
+#' # Discretize numerical predictors using built-in discretization
+#' # This performs supervised, entropy-based discretization (Fayyad and Irani, 1993)
+#' # of all numerical predictor variables with 3 or more distinct numerical values
+#' # This example could run for more than 5 seconds
+#' \dontrun{
+#' if (identical(Sys.getenv("NOT_CRAN"), "true")) {
+#'   discrModel <- discrNumeric(trainFold, classAtt)
+#'   train_disc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
+#'   test_disc <- applyCuts(testFold, discrModel$cutp, infinite_bounds=TRUE, labels=TRUE)
+#'   stats<-benchmarkQCBA(trainFold,testFold,classAtt,train_disc,test_disc,discrModel$cutp)
+#'   print(stats)
+#' }}
+#' # EXAMPLE 3: pass custom metaparameters to selected base rule learner,
+#' # then postprocess with QCBA, evaluate, and return both models
+#' # This example could run for more than 5 seconds
+#' if (identical(Sys.getenv("NOT_CRAN"), "true")) {
+#' # use only CBA as a base learner, return rule lists.
+#' \dontrun{
+#'   output<-benchmarkQCBA(trainFold,testFold,classAtt,train_disc,test_disc,discrModel$cutp, 
+#'                      CBA=list("support"=0.05,"confidence"=0.5),algs = c("CPAR"),
+#'                      return_models=TRUE)
+#'   message("Evaluation statistics")
+#'   print(output$stats)
+#'   message("CPAR model")
+#'   inspect(output$CPAR[[1]])
+#'   message("QCBA model")
+#'   print(output$CPAR_QCBA[[1]])
+#' }
+#' }
+
+benchmarkQCBA <- function(train,test, classAtt,train_disc=NULL, test_disc=NULL, cutPoints=NULL,
+                          algs = c("CBA","CMAR","CPAR","PRM","FOIL2"), iterations=2, rounding_places=3, return_models = FALSE, debug_prints = FALSE, ...
+){
+  set.seed(1)
+  algcombinations<-c(algs,paste0(algs,"_QCBA"))
+  df_stats <- data.frame(matrix(rep(0,length(algs)*2), ncol = length(algcombinations), nrow = 4), row.names = c("accuracy","rulecount","modelsize", "buildtime"))
+  returnList=list()
+  colnames(df_stats)<-algcombinations
+  
+  if (is.null(train_disc))
+  {
+    message("Discretized data not passed (train_disc is NULL), performing
+            discretization and ignoring passed value of cutPoints and test_dic")
+    discrModel <- discrNumeric(train, classAtt)
+    train_disc <- as.data.frame(lapply(discrModel$Disc.data, as.factor))
+    cutPoints <- discrModel$cutp
+    test_disc <- applyCuts(test, cutPoints, infinite_bounds=TRUE, labels=TRUE)
+  }
+  else{
+    message("Using passed prediscretized data")
+    if (sum(test_disc[[classAtt]] == test[[classAtt]]) != nrow(test_disc) | nrow(test_disc) != nrow(test))
+    {
+      stop("Values of class attribute in test_disc and test must be the same and both must have the same length")
+    }
+  }
+  
+  for (alg in algs)
+  {
+    algQCBA<-paste0(alg,"_QCBA")
+    message(paste0("** STARTED learning model with ", alg, " **"))
+    f <- match.fun(alg)
+    start.time <- Sys.time()
+    form <-as.formula(paste(classAtt, " ~ .",collapse = " "))
+    params <- list(formula = form, data = train_disc)
+    z <- list(...)
+    if (alg %in% names(z))
+    {
+      params <- append(params,z[[alg]])
+    }
+    
+    for (i in 1:iterations) arulesBaseModel <- do.call(f, params)  
+    averageExecTime<-as.numeric((Sys.time()- start.time)/iterations,units="secs")
+    message(paste0("** FINISHED learning model with ", alg, " **"))
+    #Important: use predict function from arules library 
+    yhat <- predict(arulesBaseModel, test_disc) # Use rule list for prediction
+    
+    if (return_models) returnList[[alg]] <- list(arulesBaseModel$rules)    
+    baseModel_arc <- arulesCBA2arcCBAModel(arulesBaseModel, cutPoints,  train, classAtt)
+    
+    
+    # Compute model statistics 
+    df_stats["accuracy",alg] <- CBARuleModelAccuracy(yhat, test_disc[[classAtt]])
+    df_stats["buildtime",alg] <- averageExecTime
+    df_stats["rulecount",alg] <- length(arulesBaseModel$rules)
+    df_stats["modelsize",alg] <- sum(arulesBaseModel$rules@lhs@data) 
+    
+    message(paste0("** STARTED QCBA POSTPROCESSING OF ", alg, "  **"))
+    params<-list(cbaRuleModel=baseModel_arc,datadf=train)
+    if ("QCBA" %in% names(z))
+    {
+      params <- append(params,z[["QCBA"]])
+    }
+    start.time <- Sys.time()
+    for (i in 1:iterations) qCBAmodel <- do.call(qcba,params)
+    if (alg %in% names(z))
+    {
+      params <- append(params,z[[alg]])
+    }
+    averageExecTime<-as.numeric((Sys.time() - start.time)/iterations,units="secs")
+    # wrapping in list is necessary when dataframe is added to a list 
+    if (return_models) returnList[[ algQCBA ]] <- list(qCBAmodel@rules)
+    if (debug_prints) print(qCBAmodel@rules) #Rule list after postprocessing
+    yhat <- predict(qCBAmodel, test) # Use postprocessed rule list for prediction
+    # Compute model statistics 
+    df_stats["accuracy",algQCBA]  <- CBARuleModelAccuracy(yhat, test[[classAtt]])
+    df_stats["buildtime",algQCBA] <-averageExecTime
+    df_stats["rulecount",algQCBA] <-qCBAmodel@ruleCount
+    df_stats["modelsize",algQCBA] <- sum(qCBAmodel@rules$condition_count)
+    message(paste0("** FINISHED POSTPROCESSING ", alg, " model with QCBA **"))
+  }
+  rounded_df <- as.data.frame(lapply(df_stats, function(x) round(x, digits = rounding_places)))
+  rownames(rounded_df)=rownames(df_stats)
+  if (return_models)
+  {
+    returnList[["stats"]]=df_stats
+    return(returnList)
+  }
+  else
+  {
+    return(rounded_df)
+  }
+  
+}
 
 #' @title Map R types to qCBA
 #' @description The QCBA Java implementation uses different names of some data types than are used in this R wrapper.
@@ -718,3 +926,4 @@ mapDataTypes<- function (Rtypes)
   newTypes[Rtypes=="integer"] <-"numerical"
   return(newTypes)
 }
+
